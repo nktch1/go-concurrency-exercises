@@ -34,15 +34,47 @@ func consumer(tweets []*Tweet) {
 	}
 }
 
+func asyncProducer(stream Stream) <-chan *Tweet {
+	out := make(chan *Tweet)
+
+	go func() {
+		defer close(out)
+
+		for {
+			tweet, err := stream.Next()
+			if err == ErrEOF {
+				return
+			}
+
+			out <- tweet
+		}
+	}()
+
+	return out
+}
+
+func asyncConsumer(in <-chan *Tweet, done chan struct{}) {
+	for t := range in {
+		if t.IsTalkingAboutGo() {
+			fmt.Println(t.Username, "\ttweets about golang")
+		} else {
+			fmt.Println(t.Username, "\tdoes not tweet about golang")
+		}
+	}
+
+	done <- struct{}{}
+}
+
 func main() {
-	start := time.Now()
-	stream := GetMockStream()
+	var (
+		start  = time.Now()
+		stream = GetMockStream()
+		in     = asyncProducer(stream)
+		done   = make(chan struct{})
+	)
 
-	// Producer
-	tweets := producer(stream)
-
-	// Consumer
-	consumer(tweets)
+	go asyncConsumer(in, done)
+	<-done
 
 	fmt.Printf("Process took %s\n", time.Since(start))
 }
